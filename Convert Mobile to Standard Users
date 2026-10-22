@@ -1,0 +1,135 @@
+#!/bin/bash
+
+###############################################################################
+# Convert All Standard Mobile Accounts to Local Accounts
+#
+# macOS / Jamf Pro
+#
+# Converts all standard-user mobile accounts on the Mac into local accounts.
+#
+# Skips:
+#   - root
+#   - system accounts
+#   - admin accounts
+#   - accounts that are already local accounts
+#
+# Preserves:
+#   - UID
+#   - Home directory
+#   - Password
+#   - SecureToken
+#   - FileVault access
+###############################################################################
+
+echo "======================================================"
+echo " Mobile Account -> Local Account Conversion"
+echo "======================================================"
+echo ""
+
+# Make sure script is running as root
+if [[ "$EUID" -ne 0 ]]; then
+    echo "ERROR: This script must be run as root."
+    exit 1
+fi
+
+# Get all local users
+USERS=$(dscl . -list /Users UniqueID | awk '$2 >= 500 {print $1}')
+
+CONVERTED=0
+SKIPPED=0
+
+for USER in $USERS; do
+
+    echo "------------------------------------------------------"
+    echo "Checking user: $USER"
+
+    # Skip root just in case
+    if [[ "$USER" == "root" ]]; then
+        echo "Skipping root."
+        ((SKIPPED++))
+        continue
+    fi
+
+    # Check if user is an admin
+    IS_ADMIN=$(/usr/sbin/dseditgroup -o checkmember -m "$USER" admin 2>/dev/null)
+
+    if [[ "$IS_ADMIN" == *"yes"* ]]; then
+        echo "Skipping $USER - user is an administrator."
+        ((SKIPPED++))
+        continue
+    fi
+
+    # Check for OriginalNodeName.
+    # This is the primary indicator that the account is a mobile account
+    # created from a directory service such as Active Directory.
+    if ! /usr/bin/dscl . -read "/Users/$USER" OriginalNodeName >/dev/null 2>&1; then
+        echo "Skipping $USER - not identified as a mobile account."
+        ((SKIPPED++))
+        continue
+    fi
+
+    echo "Mobile account detected: $USER"
+    echo "Converting to local account..."
+
+    # Remove Active Directory / mobile-account attributes
+    ATTRIBUTES=(
+        OriginalNodeName
+        SMBPrimaryGroupSID
+        SMBGroupRID
+        PrimaryNTDomain
+        AppleMetaRecordName
+        MCXSettings
+        MCXFlags
+        cached_groups
+        cached_auth_policy
+        CopyTimestamp
+    )
+
+    for ATTR in "${ATTRIBUTES[@]}"; do
+
+        if /usr/bin/dscl . -read "/Users/$USER" "$ATTR" >/dev/null 2>&1; then
+            echo "  Removing $ATTR"
+            /usr/bin/dscl . -delete "/Users/$USER" "$ATTR"
+        fi
+
+    done
+
+    echo "Successfully converted: $USER"
+    ((CONVERTED++))
+
+done
+
+echo ""
+echo "======================================================"
+echo " Conversion Summary"
+echo "======================================================"
+echo "Accounts converted: $CONVERTED"
+echo "Accounts skipped:   $SKIPPED"
+echo ""
+
+echo "Verifying converted accounts..."
+echo ""
+
+for USER in $USERS; do
+
+    # Only report users that are now local
+    if /usr/bin/dscl . -read "/Users/$USER" OriginalNodeName >/dev/null 2>&1; then
+        continue
+    fi
+
+    # Check whether the user is a standard account
+    IS_ADMIN=$(/usr/sbin/dseditgroup -o checkmember -m "$USER" admin 2>/dev/null)
+
+    if [[ "$IS_ADMIN" != *"yes"* ]]; then
+        echo "Standard local account: $USER"
+    fi
+
+done
+
+echo ""
+echo "Conversion complete."
+echo ""
+echo "A reboot is recommended before testing user login."
+echo ""
+
+exit 0
