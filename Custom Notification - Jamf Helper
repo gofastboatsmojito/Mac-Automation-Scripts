@@ -1,0 +1,9 @@
+JAMF_HELPER="/Library/Application Support/JAMF/bin/jamfHelper.app/Contents/MacOS/jamfHelper"
+
+"$JAMF_HELPER" \
+-windowType hud \
+-title "IT Notification" \
+-heading "Security Update" \
+-description "Your Mac will restart tonight at 10 PM. Please save your work." \
+-button1 "OK" \
+-timeout 30
