@@ -1,0 +1,147 @@
+#!/bin/bash
+
+DOCKUTIL="/usr/local/bin/dockutil"
+
+CURRENT_USER=$(/usr/bin/stat -f "%Su" /dev/console)
+
+if [[ -z "$CURRENT_USER" || "$CURRENT_USER" == "root" || "$CURRENT_USER" == "loginwindow" ]]; then
+    echo "No valid user logged in. Exiting."
+    exit 0
+fi
+
+USER_UID=$(/usr/bin/id -u "$CURRENT_USER")
+USER_HOME=$(/usr/bin/dscl . -read "/Users/$CURRENT_USER" NFSHomeDirectory | /usr/bin/awk '{print $2}')
+
+echo "Current user: $CURRENT_USER"
+echo "UID: $USER_UID"
+echo "Home: $USER_HOME"
+
+if [[ ! -x "$DOCKUTIL" ]]; then
+    echo "dockutil not found at $DOCKUTIL"
+    exit 1
+fi
+
+# ------------------------------------------------------------
+# Wait for the user's Dock to initialize
+# ------------------------------------------------------------
+
+echo "Waiting for Dock to initialize..."
+
+DOCK_READY=0
+
+for i in {1..30}; do
+
+    if /usr/bin/pgrep -u "$USER_UID" -x Dock >/dev/null 2>&1; then
+        DOCK_READY=1
+        echo "Dock detected after $i attempt(s)."
+        break
+    fi
+
+    echo "Dock not ready yet... waiting 2 seconds."
+    sleep 2
+
+done
+
+if [[ "$DOCK_READY" -ne 1 ]]; then
+    echo "Dock did not initialize within 60 seconds."
+    exit 1
+fi
+
+# Give macOS a little extra time to finish initializing the Dock
+sleep 3
+
+echo "Dock is ready. Configuring Dock..."
+
+# ------------------------------------------------------------
+# Remove everything
+# ------------------------------------------------------------
+
+"$DOCKUTIL" --remove all --no-restart "$USER_HOME"
+
+sleep 2
+
+# ------------------------------------------------------------
+# Apps
+# ------------------------------------------------------------
+
+if [[ -e "/System/Applications/Apps.app" ]]; then
+    "$DOCKUTIL" \
+        --add "/System/Applications/Apps.app" \
+        --position 1 \
+        --no-restart \
+        "$USER_HOME"
+fi
+
+# ------------------------------------------------------------
+# Safari
+# ------------------------------------------------------------
+
+if [[ -e "/Applications/Safari.app" ]]; then
+    "$DOCKUTIL" \
+        --add "/Applications/Safari.app" \
+        --position 2 \
+        --no-restart \
+        "$USER_HOME"
+fi
+
+# ------------------------------------------------------------
+# Calendar
+# ------------------------------------------------------------
+
+if [[ -e "/System/Applications/Calendar.app" ]]; then
+    "$DOCKUTIL" \
+        --add "/System/Applications/Calendar.app" \
+        --position 3 \
+        --no-restart \
+        "$USER_HOME"
+fi
+
+# ------------------------------------------------------------
+# TextEdit
+# ------------------------------------------------------------
+
+if [[ -e "/System/Applications/TextEdit.app" ]]; then
+    "$DOCKUTIL" \
+        --add "/System/Applications/TextEdit.app" \
+        --position 4 \
+        --no-restart \
+        "$USER_HOME"
+fi
+
+# ------------------------------------------------------------
+# System Settings
+# ------------------------------------------------------------
+
+if [[ -e "/System/Applications/System Settings.app" ]]; then
+    "$DOCKUTIL" \
+        --add "/System/Applications/System Settings.app" \
+        --position 5 \
+        --no-restart \
+        "$USER_HOME"
+fi
+
+# ------------------------------------------------------------
+# Downloads
+# ------------------------------------------------------------
+
+if [[ -d "$USER_HOME/Downloads" ]]; then
+    "$DOCKUTIL" \
+        --add "$USER_HOME/Downloads" \
+        --view grid \
+        --display folder \
+        --position 6 \
+        --no-restart \
+        "$USER_HOME"
+fi
+
+# ------------------------------------------------------------
+# Restart Dock
+# ------------------------------------------------------------
+
+echo "Restarting Dock..."
+
+killall Dock
+
+echo "Dock configuration complete for $CURRENT_USER."
+
+exit 0
