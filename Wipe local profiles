@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Users you want to keep
+EXCLUDED_USERS=("macadmin" "example")
+
+# Function to check if user is excluded
+is_excluded_user() {
+    local user=$1
+    for excluded in "${EXCLUDED_USERS[@]}"; do
+        if [ "$user" == "$excluded" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Loop through local users with UID >= 501
+while IFS= read -r username; do
+    # Exclude explicitly
+    if is_excluded_user "$username"; then
+        echo "Skipping excluded user: $username"
+        continue
+    fi
+
+    # Exclude admins
+    if id -Gn "$username" | grep -qw "admin"; then
+        echo "Skipping admin user: $username"
+        continue
+    fi
+
+    echo "Deleting user: $username"
+    sudo sysadminctl -deleteUser "$username"
+
+done < <(dscl . -list /Users UniqueID | awk '$2 >= 501 {print $1}')
+
+echo "User cleanup complete."
