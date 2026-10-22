@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Get currently logged-in user (excluding loginwindow, root, etc.)
+CURRENT_USER=$(stat -f%Su /dev/console)
+
+if [[ -z "$CURRENT_USER" ]] || [[ "$CURRENT_USER" == "root" ]] || [[ "$CURRENT_USER" == "_mbsetupuser" ]]; then
+    echo "No valid user logged in. Exiting."
+    exit 1
+fi
+
+echo "Current logged-in user: $CURRENT_USER"
+
+# Add user to admin group
+/usr/sbin/dseditgroup -o edit -a "$CURRENT_USER" -t user admin
+
+if [[ $? -eq 0 ]]; then
+    echo "User $CURRENT_USER has been added to the admin group."
+else
+    echo "Failed to add $CURRENT_USER to the admin group."
+    exit 1
+fi
